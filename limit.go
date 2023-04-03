@@ -1,6 +1,7 @@
 package util
 
 import (
+	"fmt"
 	"io"
 	"time"
 )
@@ -9,7 +10,7 @@ import (
 // rate 速度，rate/每秒
 func New(rate int64) *Limiter {
 	return &Limiter{
-		rate:  time.Duration(rate),
+		rate:  rate,
 		count: 0,
 		t:     time.Now(),
 	}
@@ -44,18 +45,14 @@ func Writer(w io.Writer, l *Limiter) io.Writer {
 
 // Limiter 速度限制器
 type Limiter struct {
-	rate  time.Duration
+	rate  int64
 	count int64 // 最大8G
 	t     time.Time
 }
 
 // Wait 传入需要处理的数量，计算并等待需要经过的时间
 func (l *Limiter) Wait(count int) {
-	l.count += int64(count)
-	t := time.Duration(l.count)*time.Second/l.rate - time.Since(l.t)
-	if t > 0 {
-		time.Sleep(t)
-	}
+
 }
 
 type reader struct {
@@ -86,6 +83,38 @@ type writer struct {
 
 // Write Write
 func (w *writer) Write(buf []byte) (int, error) {
-	w.l.Wait(len(buf))
-	return w.w.Write(buf)
+	a := time.Now()
+	uin := 1024
+	nl := len(buf)
+	flag := false
+
+	now := time.Now()
+	count, ln := 0, 0
+	//start, end := 0, 0
+	for {
+		var ret []byte
+		if (count+1)*uin < nl {
+			ret = buf[count*uin : (count+1)*uin]
+		} else {
+			ret = buf[count*uin : nl]
+			flag = true
+		}
+		count += 1
+		ln += len(ret)
+		w.w.Write(ret)
+		if int64(ln) > w.l.rate {
+			subM := time.Now().Sub(now)
+			t := 1000 - subM.Milliseconds()
+			if t > 0 {
+				time.Sleep(time.Duration(t) * time.Millisecond)
+				now = time.Now()
+				ln = 0
+			}
+		}
+		if flag == true {
+			break
+		}
+	}
+	fmt.Println(time.Now().Sub(a).Seconds())
+	return nl, nil
 }
